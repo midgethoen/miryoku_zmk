@@ -4,3 +4,18 @@
 #include "../miryoku/custom_config.h"
 #include "../miryoku/mapping/50/kyria.h"
 #include "../miryoku/miryoku.dtsi"
+
+
+&usbd {
+    status = "okay";
+    cdc_acm_uart: cdc_acm_uart {
+        compatible = "zephyr,cdc-acm-uart";
+    };
+};
+
+
+/ {
+  chosen {
+    zephyr,console = &cdc_acm_uart;
+  };
+};
