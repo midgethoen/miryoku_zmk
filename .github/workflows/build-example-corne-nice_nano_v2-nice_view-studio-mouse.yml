@@ -1,0 +1,157 @@
+# Copyright 2022 Manna Harbour
+# https://github.com/manna-harbour/miryoku
+
+# Corne with nice_nano_v2, nice_view display, ZMK Studio support, and mouse/pointing
+# This is a standalone workflow that extends main.yml functionality with snippet support
+# Note: ZMK Studio snippet only applied to left (central) side
+
+name: 'Build Example corne nice_nano_v2 nice_view studio mouse'
+on: workflow_dispatch
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container:
+      image: zmkfirmware/zmk-build-arm:stable
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - board: nice_nano_v2
+            shield: corne_left nice_view_adapter nice_view
+            snippet: studio-rpc-usb-uart
+            kconfig: |
+              CONFIG_ZMK_STUDIO=y
+              CONFIG_ZMK_POINTING=y
+            custom_config: |
+              #define MIRYOKU_KLUDGE_MOUSEKEYSPR
+          - board: nice_nano_v2
+            shield: corne_right nice_view_adapter nice_view
+            snippet: ""
+            kconfig: |
+              CONFIG_ZMK_POINTING=y
+            custom_config: |
+              #define MIRYOKU_KLUDGE_MOUSEKEYSPR
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
+        with:
+          path: 'miryoku_zmk'
+
+      - name: variables
+        id: variables
+        run: |
+          echo "::group::variables"
+
+          SHIELD_ARG="-DSHIELD=\"${{ matrix.shield }}\""
+          shield=$(echo "${{ matrix.shield }}" | cut -d ' ' -f 1)
+          keyboard="$shield"
+          keyboard_split="$keyboard"
+          keyboard_base=$(echo "$keyboard" | sed -e 's/_\(left\|right\)//' -e 's/@.*//')
+
+          echo "shield_arg=$SHIELD_ARG" >> $GITHUB_OUTPUT
+
+          # Configure custom_config.h
+          configfile="${GITHUB_WORKSPACE}/miryoku_zmk/miryoku/custom_config.h"
+          tmpfile="$configfile.tmp"
+          echo -n '#define ' > "$tmpfile"
+          echo -n "MIRYOKU_KEYBOARD_$keyboard_base" | tr -c '[:alnum:]' '_' | tr '[:lower:]' '[:upper:]' >> "$tmpfile"
+          echo >> "$tmpfile"
+          cat "$configfile" >> "$tmpfile"
+          mv "$tmpfile" "$configfile"
+
+          # Add custom config defines
+          if [ -n "${{ matrix.custom_config }}" ]; then
+            echo "${{ matrix.custom_config }}" >> "$configfile"
+          fi
+
+          # Configure kconfig
+          if [ -n "${{ matrix.kconfig }}" ]; then
+            kconfig_file="${GITHUB_WORKSPACE}/miryoku_zmk/config/${keyboard_split}.conf"
+            echo "${{ matrix.kconfig }}" >> "$kconfig_file"
+          fi
+
+          # Build snippet arg (before --)
+          snippet_arg=""
+          if [ -n "${{ matrix.snippet }}" ]; then
+            snippet_arg="-S ${{ matrix.snippet }}"
+          fi
+          echo "snippet_arg=$snippet_arg" >> $GITHUB_OUTPUT
+
+          # Artifact naming
+          run_name="miryoku_zmk-${{ matrix.shield }}-${{ matrix.board }}-studio-mouse"
+          run_name=$(echo "$run_name" | tr ' ' '-')
+          echo "run_name=$run_name" >> $GITHUB_OUTPUT
+
+          artifact_dir="${GITHUB_WORKSPACE}/artifacts"
+          mkdir -p "$artifact_dir"
+          echo "artifact_dir=$artifact_dir" >> $GITHUB_OUTPUT
+
+          echo "::endgroup::"
+
+      - name: cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            zmk/modules/
+            zmk/zephyr/
+          key: zephyr-${{ runner.os }}-${{ hashFiles('zmk/app/west.yml') }}
+        timeout-minutes: 2
+        continue-on-error: true
+
+      - name: zmk
+        run: |
+          echo "::group::zmk"
+          git clone -b main --depth 1 "https://github.com/zmkfirmware/zmk.git" zmk
+          echo "::endgroup::"
+
+      - name: west setup
+        run: |
+          echo "::group::setup"
+          cd "${GITHUB_WORKSPACE}/zmk"
+          west init -l app
+          west update
+          west zephyr-export
+          echo "::endgroup::"
+
+      - name: build
+        run: |
+          echo "::group::build"
+          cd "${GITHUB_WORKSPACE}/zmk/app"
+
+          log='build.log'
+          {
+            west build -b ${{ matrix.board }} ${{ steps.variables.outputs.snippet_arg }} -- \
+              ${{ steps.variables.outputs.shield_arg }} \
+              -DZMK_CONFIG="${GITHUB_WORKSPACE}/miryoku_zmk/config" || \
+            echo "::error::Build failed with exit code $?."
+          } 2>&1 | tee "$log"
+
+          if grep -q 'Invalid BOARD; see above.' "$log"; then
+            echo '::error::Board not found.'
+            exit 69
+          fi
+          if grep -q 'Failed to locate keymap file!' "$log"; then
+            echo '::error::Keymap not found.'
+            exit 69
+          fi
+          if grep -q '::error::Build failed' "$log"; then
+            exit 1
+          fi
+          echo "::endgroup::"
+
+          echo "::group::copy"
+          for extension in uf2 bin hex; do
+            file="${GITHUB_WORKSPACE}/zmk/app/build/zephyr/zmk.$extension"
+            if [ -f "$file" ]; then
+              cp "$file" "${{ steps.variables.outputs.artifact_dir }}"
+              break
+            fi
+          done
+          echo "::endgroup::"
+
+      - name: upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.variables.outputs.run_name }}
+          path: ${{ steps.variables.outputs.artifact_dir }}
