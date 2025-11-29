@@ -49,3 +49,9 @@ MIRYOKU_LAYER_LIST
 #else
   #include "miryoku_behaviors.dtsi"
 #endif
+
+#if defined (MIRYOKU_STUDIO)
+  #if !defined(CONFIG_ZMK_SPLIT) || defined(CONFIG_ZMK_SPLIT_ROLE_CENTRAL)
+    #include "miryoku_studio.dtsi"
+  #endif
+#endif

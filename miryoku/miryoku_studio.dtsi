@@ -1,0 +1,17 @@
+// Copyright 2024 Manna Harbour
+// https://github.com/manna-harbour/miryoku
+
+// ZMK Studio support - creates USB CDC-ACM UART for Studio RPC communication
+// Only included on central (left) side via CONFIG_ZMK_SPLIT_ROLE_CENTRAL check
+
+/ {
+    chosen {
+        zmk,studio-rpc-uart = &miryoku_studio_rpc_uart;
+    };
+};
+
+&zephyr_udc0 {
+    miryoku_studio_rpc_uart: miryoku_studio_rpc_uart {
+        compatible = "zephyr,cdc-acm-uart";
+    };
+};
