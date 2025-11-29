@@ -1,0 +1,24 @@
+# Copyright 2024 Manna Harbour
+# https://github.com/manna-harbour/miryoku
+
+name: 'Build Example corne nice_nano_v2 nice_view with ZMK Studio and Mouse'
+on: workflow_dispatch
+jobs:
+  # Left side with ZMK Studio + Mouse support
+  # ZMK Studio only needed on central (left) side for split keyboards
+  build-left:
+    uses: ./.github/workflows/main.yml
+    secrets: inherit
+    with:
+      board: '["nice_nano_v2"]'
+      shield: '["corne_left nice_view_adapter nice_view"]'
+      kconfig: '["CONFIG_ZMK_POINTING=y\nCONFIG_ZMK_STUDIO=y\nCONFIG_ZMK_USB=y\nCONFIG_USB_DEVICE_STACK=y\nCONFIG_USB_CDC_ACM=y\nCONFIG_SERIAL=y\nCONFIG_UART_INTERRUPT_DRIVEN=y\nCONFIG_UART_LINE_CTRL=y"]'
+
+  # Right side with Mouse support only (no Studio needed on peripheral)
+  build-right:
+    uses: ./.github/workflows/main.yml
+    secrets: inherit
+    with:
+      board: '["nice_nano_v2"]'
+      shield: '["corne_right nice_view_adapter nice_view"]'
+      kconfig: '["CONFIG_ZMK_POINTING=y"]'
